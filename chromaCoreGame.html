@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Chroma Core // Ultimate Compulsion Protocol</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <style>
+        :root {
+            --cyan: #00ffff; --magenta: #ff00ff; --yellow: #ffff00;
+            --bg-color: #0d0d0d; --text-color: #fff; --border-color: #333; --red: #ff3333;
+        }
+        body { font-family: 'Orbitron', sans-serif; background-color: var(--bg-color); color: var(--text-color); overflow: hidden; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; touch-action: manipulation; }
+        #gameContainer { position: relative; width: 100%; max-width: 500px; height: 100%; max-height: 800px; background-color: #000; border: 2px solid var(--border-color); box-shadow: 0 0 20px rgba(255, 255, 255, 0.1); transition: transform 0.1s ease; overflow: hidden; }
+        canvas { display: block; width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        #backgroundCanvas { z-index: 0; opacity: 0.7; filter: blur(10px); }
+        #gameCanvas { z-index: 1; background-color: transparent; }
+        .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; text-shadow: 0 0 5px #000, 0 0 10px #000; z-index: 2; animation: ui-flicker 10s linear infinite; }
+        
+        /* Gameplay UI */
+        #operator-id, #level-display { position: absolute; top: 10px; left: 20px; font-size: 0.8rem; color: #888; }
+        #level-display { left: auto; right: 20px; }
+        #score { position: absolute; top: 30px; left: 20px; font-size: 2.5rem; font-weight: 900; transition: transform 0.1s ease, color 0.1s ease; }
+        #burstMeter { position: absolute; bottom: 20px; left: 5%; width: 90%; height: 25px; background-color: rgba(0,0,0,0.5); border: 2px solid #555; border-radius: 5px; }
+        #burstFill { width: 0%; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--yellow)); border-radius: 2px; transition: width 0.2s ease-in-out; box-shadow: 0 0 15px #fff; }
+        
+        /* Level Up UI */
+        #level-up-display { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 3rem; font-weight: 900; color: #fff; text-shadow: 0 0 20px #fff; opacity: 0; transition: opacity 0.5s, transform 0.5s; pointer-events: none; z-index: 100; }
+        #level-up-display.active { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+
+        /* Modals */
+        .modal { 
+            background-color: rgba(0, 0, 0, 0.7); 
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            width: 100%; height: 100%; pointer-events: all; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; position: absolute; top:0; left:0; z-index: 10; opacity: 0; transition: opacity 0.3s, transform 0.3s; visibility: hidden; transform: scale(0.95); 
+        }
+        .modal.active { opacity: 1; visibility: visible; transform: scale(1); }
+        .title { font-size: 3rem; font-weight: 900; background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--yellow)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: pulse-text 2s infinite, text-wave 5s linear infinite; }
+        .button { font-family: 'Orbitron', sans-serif; background: transparent; border: 2px solid #fff; color: #fff; padding: 10px 20px; font-size: 1.1rem; cursor: pointer; margin-top: 20px; box-shadow: 0 0 10px #fff inset; transition: all 0.2s ease; animation: text-wave 7s linear infinite; }
+        .button:hover { background: #fff; color: #000; box-shadow: 0 0 20px #fff; transform: scale(1.05); }
+        
+        @keyframes pulse-text { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.8); } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+        @keyframes ui-flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.98; } 52% { opacity: 1; } 75% { opacity: 0.99; } }
+        @keyframes text-wave { 0% { transform: skewX(0deg); } 25% { transform: skewX(0.5deg); } 75% { transform: skewX(-0.5deg); } 100% { transform: skewX(0deg); } }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="backgroundCanvas"></canvas>
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="ui-layer" class="ui-layer">
+            <!-- Gameplay UI -->
+            <div id="gameplayUI" class="hidden">
+                <div id="operator-id">OPERATOR: UNKNOWN</div>
+                <div id="level-display">LEVEL: 1</div>
+                <div id="score">0</div>
+                <div id="burstMeter"><div id="burstFill"></div></div>
+                <div id="level-up-display"></div>
+            </div>
+
+            <!-- Start Screen -->
+            <div id="startScreen" class="modal active">
+                <h1 class="title">CHROMA CORE</h1>
+                <button id="startButton" class="button">Initiate Synchronization</button>
+            </div>
+
+            <!-- Game Over Screen -->
+            <div id="gameOverScreen" class="modal">
+                <h2 class="text-4xl text-red-500 font-bold mb-2">DESYNCHRONIZATION</h2>
+                <p class="text-2xl mb-1">Final Score: <span id="finalScore">0</span></p>
+                <p class="text-xl text-gray-400 mb-4">Reached Level: <span id="finalLevel">1</span></p>
+                <button id="restartButton" class="button">Re-Synchronize</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+// --- SETUP & INITIALIZATION ---
+const gameContainer = document.getElementById('gameContainer');
+const bgCanvas = document.getElementById('backgroundCanvas'); const bgCtx = bgCanvas.getContext('2d');
+const gameCanvas = document.getElementById('gameCanvas'); const ctx = gameCanvas.getContext('2d');
+const ui = {
+    gameplay: document.getElementById('gameplayUI'),
+    start: document.getElementById('startScreen'),
+    gameOver: document.getElementById('gameOverScreen'),
+    score: document.getElementById('score'),
+    operatorId: document.getElementById('operator-id'),
+    levelDisplay: document.getElementById('level-display'),
+    levelUpDisplay: document.getElementById('level-up-display'),
+    burstFill: document.getElementById('burstFill'),
+};
+document.getElementById('startButton').addEventListener('click', startGame);
+document.getElementById('restartButton').addEventListener('click', startGame);
+
+// --- CORE GAME STATE & CONSTANTS ---
+let player, entities, particles, effects, score, burstMeter, combo, frame = 0, currentLevel = 1;
+let gameOver, keys = {}, lastTap = 0, colorSequence = [0, 1, 2], controlsReversed = false;
+const COLORS = {CYAN: '#00ffff', MAGENTA: '#ff00ff', YELLOW: '#ffff00'};
+const COLOR_ARRAY = Object.values(COLORS);
+const ENTITY_TYPES = {NORMAL: 'normal', HAZARD: 'hazard', CATALYST: 'catalyst', GRAVITY_WELL: 'gravity_well', ECHO: 'echo'};
+const LEVEL_THRESHOLDS = [0, 50, 150, 300, 500, 750, 1000, 1300, 1650, 2000];
+const LEVEL_NAMES = ["", "The Threshold", "Colors Bleed", "Unstable Sequence", "Echoes of the Past", "Gravity Wells", "Phase Shift", "Corrupted Core", "Sentient Hazards", "Reality Tear", "EGO DEATH"];
+
+// --- AUDIO ---
+let synth, metalSynth, drone;
+function setupAudio() { 
+    if (window.Tone && Tone.context.state !== 'running') { 
+        Tone.start(); 
+        synth = new Tone.PolySynth(Tone.Synth).toDestination(); 
+        metalSynth = new Tone.MetalSynth().toDestination();
+        drone = new Tone.Oscillator("F#2", "sine").toDestination();
+        drone.volume.value = -25;
+        drone.start();
+    } 
+}
+
+// --- GAME LOGIC ---
+function setup() {
+    [bgCanvas, gameCanvas].forEach(c => { c.width = gameContainer.clientWidth; c.height = gameContainer.clientHeight; });
+    const playerSize = gameCanvas.width * 0.12;
+    player = { x: gameCanvas.width / 2 - playerSize / 2, y: gameCanvas.height - playerSize * 1.5, width: playerSize, height: playerSize, colorIndex: 0, speed: 8, trail: [], scale: 1, scaleTarget: 1, rotation: 0, isPhased: false, phaseTimer: 0 };
+    entities = []; particles = []; effects = []; score = 0; burstMeter = 0; combo = 0; frame = 0; currentLevel = 1;
+    gameOver = false; keys = {}; colorSequence = [0, 1, 2]; controlsReversed = false;
+    ui.score.textContent = score;
+    ui.levelDisplay.textContent = `LEVEL: ${currentLevel}`;
+    updateBurstMeter();
+}
+
+function startGame() {
+    setupAudio();
+    setup();
+    showScreen(ui.gameplay);
+    gameLoop();
+}
+
+function endGame() {
+    if (gameOver) return;
+    gameOver = true;
+    if (metalSynth) metalSynth.triggerAttackRelease("C2", "0.5s");
+    createShockwave(player.x + player.width / 2, player.y + player.height / 2, 'rgba(255, 50, 50, 0.5)');
+    shakeScreen(10);
+    
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalLevel').textContent = currentLevel;
+    
+    setTimeout(() => {
+        showScreen(ui.gameOver);
+    }, 500);
+}
+
+function checkLevelUp() {
+    if (currentLevel < 10 && score >= LEVEL_THRESHOLDS[currentLevel]) {
+        currentLevel++;
+        ui.levelDisplay.textContent = `LEVEL: ${currentLevel}`;
+        ui.levelUpDisplay.textContent = LEVEL_NAMES[currentLevel];
+        ui.levelUpDisplay.classList.add('active');
+        if(synth) synth.triggerAttackRelease("C6", "1s");
+        createShockwave(gameCanvas.width/2, gameCanvas.height/2, '#fff', 2);
+        setTimeout(() => ui.levelUpDisplay.classList.remove('active'), 2000);
+
+        // Apply level mechanics
+        if (currentLevel === 3) {
+            // Shuffle color sequence
+            for (let i = colorSequence.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [colorSequence[i], colorSequence[j]] = [colorSequence[j], colorSequence[i]];
+            }
+        }
+    }
+}
+
+function gameLoop() {
+    if (gameOver) return;
+    frame++;
+    ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+    
+    updatePlayer();
+    updateEntities();
+    if (drone) drone.frequency.value = 80 + currentLevel * 10 + Math.min(score / 10, 100);
+    
+    renderBackground();
+    drawEntities();
+    drawEffects();
+    drawPlayer();
+    drawParticles();
+
+    checkCollisions();
+    checkLevelUp();
+    requestAnimationFrame(gameLoop);
+}
+
+// --- UPDATE & DRAW FUNCTIONS ---
+function updatePlayer() {
+    let moveSpeed = player.speed;
+    if (controlsReversed) moveSpeed = -moveSpeed;
+    if (keys['ArrowLeft'] || keys['KeyA']) player.x -= moveSpeed;
+    if (keys['ArrowRight'] || keys['KeyD']) player.x += moveSpeed;
+    player.x = Math.max(0, Math.min(player.x, gameCanvas.width - player.width));
+    player.trail.push({ x: player.x + player.width / 2, y: player.y + player.height / 2, color: COLOR_ARRAY[player.colorIndex], width: player.width * player.scale });
+    if (player.trail.length > 25) player.trail.shift();
+    player.scale += (player.scaleTarget - player.scale) * 0.2;
+    player.rotation += player.speed / 100;
+    
+    if (currentLevel >= 6 && player.isPhased) {
+        player.phaseTimer--;
+        if (player.phaseTimer <= 0) player.isPhased = false;
+    }
+}
+
+function updateEntities() {
+    entities.forEach(e => {
+        if (e.isAbsorbed) {
+            const dx = (player.x + player.width / 2) - (e.x + e.width / 2);
+            const dy = (player.y + player.height / 2) - (e.y + e.height / 2);
+            e.x += dx * 0.3; e.y += dy * 0.3;
+            e.width *= 0.9; e.height *= 0.9;
+        } else {
+            e.y += e.speed;
+            if (e.type === ENTITY_TYPES.HAZARD && currentLevel >= 8) {
+                const dx = (player.x + player.width / 2) - (e.x + e.width / 2);
+                e.x += Math.sign(dx) * 0.5;
+            }
+            if(e.rotationSpeed) e.rotation += e.rotationSpeed;
+        }
+    });
+
+    if (Math.random() < (0.05 + (score / 5000))) {
+        const size = Math.random() * 20 + 20;
+        const x = Math.random() * (gameCanvas.width - size);
+        let colorIndex = Math.floor(Math.random() * COLOR_ARRAY.length);
+        let type = ENTITY_TYPES.NORMAL;
+        let rotationSpeed = 0;
+        
+        if (currentLevel >= 5 && Math.random() < 0.02) type = ENTITY_TYPES.GRAVITY_WELL;
+        else if (currentLevel >= 4 && Math.random() < 0.03) type = ENTITY_TYPES.ECHO;
+        else if (Math.random() < 0.1) {
+            type = ENTITY_TYPES.HAZARD;
+            rotationSpeed = (Math.random() - 0.5) * 0.1;
+        } else if (Math.random() < 0.05) {
+            type = ENTITY_TYPES.CATALYST;
+        }
+        
+        const speed = (Math.random() * 2 + 2 + (score / 1000)) * (1 + currentLevel * 0.1);
+        entities.push({ x, y: -size, width: size, height: size, color: COLOR_ARRAY[colorIndex], colorIndex, type, speed, isAbsorbed: false, rotation: 0, rotationSpeed, trail: [] });
+    }
+    entities = entities.filter(e => e.y < gameCanvas.height && e.width > 1);
+}
+
+function drawPlayer() {
+    const x = player.x + player.width / 2;
+    const y = player.y + player.height / 2;
+    const size = player.width * player.scale;
+    const color = COLOR_ARRAY[player.colorIndex];
+    const breath = Math.sin(frame * 0.1) * (size * 0.05);
+
+    ctx.globalAlpha = (player.isPhased || currentLevel === 10) ? 0.5 : 1.0;
+    player.trail.forEach((p, i) => { 
+        ctx.globalAlpha = 0.5 * (i / player.trail.length);
+        ctx.fillStyle = p.color; 
+        ctx.beginPath(); 
+        ctx.arc(p.x, p.y, (p.width / 2) * (i / player.trail.length), 0, Math.PI * 2); 
+        ctx.fill(); 
+    });
+    ctx.globalAlpha = (player.isPhased || currentLevel === 10) ? 0.5 : 1.0;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(player.rotation);
+    ctx.translate(-x, -y);
+    
+    ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 20;
+    ctx.beginPath(); ctx.arc(x, y, (size + breath) / 2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1.0;
+}
+
+function drawEntities() {
+    entities.forEach(e => {
+        ctx.save();
+        ctx.translate(e.x + e.width / 2, e.y + e.height / 2);
+        
+        const warp = Math.sin(frame * 0.1 + e.y * 0.05) * 5;
+        ctx.rotate(e.rotation);
+
+        let color = e.color, glow = 15;
+        ctx.shadowColor = color;
+
+        switch(e.type) {
+            case ENTITY_TYPES.HAZARD:
+                color = '#888'; glow = 20; ctx.shadowColor = '#ff0000'; ctx.fillStyle = color;
+                ctx.beginPath(); ctx.moveTo(0, -e.height / 2 + warp); ctx.lineTo(e.width / 2 - warp, e.height / 2); ctx.lineTo(-e.width / 2 + warp, e.height / 2);
+                ctx.closePath(); ctx.fill();
+                break;
+            case ENTITY_TYPES.CATALYST:
+                color = '#fff'; glow = 25; ctx.shadowColor = '#fff'; ctx.fillStyle = color;
+                ctx.beginPath(); ctx.moveTo(0, -e.height / 2 - warp); ctx.lineTo(e.width / 2 + warp, 0); ctx.lineTo(0, e.height / 2 + warp); ctx.lineTo(-e.width / 2 - warp, 0);
+                ctx.closePath(); ctx.fill();
+                break;
+            default: // NORMAL
+                ctx.fillStyle = color; ctx.shadowBlur = glow;
+                ctx.fillRect(-e.width / 2, -e.height / 2, e.width + warp, e.height - warp);
+        }
+        
+        ctx.restore();
+        ctx.shadowBlur = 0;
+    });
+}
+
+function drawParticles() {
+    particles.forEach((p, i) => {
+        p.x += p.vx; p.y += p.vy; p.alpha -= 0.02;
+        p.color = COLOR_ARRAY[ (Math.floor(p.alpha * 10) + frame) % 3 ];
+        if (p.alpha <= 0) particles.splice(i, 1);
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.globalAlpha = 1.0;
+}
+
+function drawEffects() {
+    effects.forEach((effect, i) => {
+        effect.update();
+        effect.draw(ctx, frame);
+        if (effect.life <= 0) effects.splice(i, 1);
+    });
+}
+
+function renderBackground() {
+    bgCtx.globalCompositeOperation = 'source-over';
+    bgCtx.fillStyle = 'rgba(13, 13, 13, 0.1)'; // Creates trails
+    bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+    for (let i = 0; i < 3; i++) {
+        bgCtx.beginPath();
+        let angle = frame * 0.002 + i * 2;
+        let x = bgCanvas.width / 2 + Math.sin(angle) * 100;
+        let y = bgCanvas.height / 2 + Math.cos(angle) * 100;
+        let radius = 50 + Math.sin(frame * 0.005 + i) * 20;
+        let grd = bgCtx.createRadialGradient(x, y, 0, x, y, radius);
+        grd.addColorStop(0, COLOR_ARRAY[i] + '80');
+        grd.addColorStop(1, 'transparent');
+        bgCtx.fillStyle = grd;
+        bgCtx.arc(x, y, radius, 0, Math.PI * 2);
+        bgCtx.fill();
+    }
+}
+
+// --- COLLISION & ACTIONS ---
+function checkCollisions() {
+    if (player.isPhased) return;
+    for (let i = entities.length - 1; i >= 0; i--) {
+        const e = entities[i];
+        if (e.isAbsorbed) continue;
+        if (player.x < e.x + e.width && player.x + player.width > e.x && player.y < e.y + e.height && player.y + player.height > e.y) {
+            handleCollision(e, i);
+        }
+    }
+}
+
+function handleCollision(e, i) {
+    let absorbed = false;
+    let scoreGained = 0;
+    let burstGained = 5;
+
+    switch (e.type) {
+        case ENTITY_TYPES.HAZARD: endGame(); return;
+        case ENTITY_TYPES.CATALYST:
+            if (synth) synth.triggerAttackRelease("C6", "0.1s");
+            scoreGained = 10; burstGained = 25;
+            popElement(ui.score, '#fff');
+            createParticles(e.x + e.width / 2, e.y + e.height / 2, '#fff', 30);
+            absorbed = true;
+            break;
+        default: // NORMAL
+            if (e.colorIndex === player.colorIndex) {
+                combo++;
+                scoreGained = combo;
+                if (synth) synth.triggerAttackRelease("C5", "0.1s");
+                popElement(ui.score, e.color);
+                player.scale = 1.1;
+                absorbed = true;
+            } else { 
+                endGame(); 
+                return; 
+            }
+    }
+    
+    if (absorbed) {
+        e.isAbsorbed = true;
+        tickScore(scoreGained);
+        burstMeter = Math.min(100, burstMeter + burstGained);
+    } else {
+        entities.splice(i, 1);
+    }
+    updateBurstMeter();
+}
+
+function switchPlayerColor() { 
+    if (gameOver) return; 
+    const currentIndex = colorSequence.indexOf(player.colorIndex);
+    player.colorIndex = colorSequence[(currentIndex + 1) % colorSequence.length];
+    
+    if (currentLevel >= 7 && Math.random() < 0.1) {
+        player.colorIndex = colorSequence[Math.floor(Math.random() * colorSequence.length)];
+    }
+
+    combo = 0;
+    if (synth) synth.triggerAttackRelease("C4", "0.1s");
+    player.scale = 0.7;
+    player.scaleTarget = 1;
+    createShockwave(player.x + player.width/2, player.y + player.height/2, COLOR_ARRAY[player.colorIndex], 0.5);
+    createParticles(player.x + player.width/2, player.y + player.height/2, '#fff', 30);
+}
+function activateChromaBurst() { 
+    if (gameOver || burstMeter < 100) return; 
+    if (synth) synth.triggerAttackRelease("C4", "1.5s"); 
+    burstMeter = 0; 
+    tickScore(entities.length * 5);
+    createShockwave(player.x + player.width/2, player.y + player.height/2, '#ffffff', 1.5, true);
+    entities.forEach(e => createParticles(e.x + e.width/2, e.y + e.height/2, e.color, 10));
+    setTimeout(() => entities = [], 50);
+    updateBurstMeter(); 
+    shakeScreen(15); 
+}
+
+// --- HELPERS & UI ---
+function createParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 5 + 2;
+        particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, size: Math.random() * 3 + 1, color, alpha: 1 });
+    }
+}
+
+function createShockwave(x, y, color, scale = 1, glitch = false) {
+    effects.push({
+        x, y, color, scale, glitch, radius: 0, life: 1,
+        update() { this.radius += 20 * this.scale; this.life -= 0.02; },
+        draw(c, f) {
+            c.globalAlpha = this.life; c.strokeStyle = this.color; c.lineWidth = 5;
+            c.beginPath(); c.arc(this.x, this.y, this.radius, 0, Math.PI * 2); c.stroke();
+            if (this.glitch) {
+                const offset = Math.sin(f * 0.5) * 10;
+                c.save();
+                c.globalCompositeOperation = 'lighter';
+                c.strokeStyle = 'rgba(255,0,0,0.5)'; c.beginPath(); c.arc(this.x + offset, this.y, this.radius, 0, Math.PI * 2); c.stroke();
+                c.strokeStyle = 'rgba(0,255,0,0.5)'; c.beginPath(); c.arc(this.x - offset, this.y, this.radius, 0, Math.PI * 2); c.stroke();
+                c.strokeStyle = 'rgba(0,0,255,0.5)'; c.beginPath(); c.arc(this.x, this.y + offset, this.radius, 0, Math.PI * 2); c.stroke();
+                c.restore();
+            }
+            c.globalAlpha = 1.0;
+        }
+    });
+}
+
+function tickScore(amount) {
+    let currentScore = score;
+    score += amount;
+    const ticks = Math.min(amount, 20);
+    const tickAmount = amount / ticks;
+    for (let i = 0; i < ticks; i++) {
+        setTimeout(() => {
+            currentScore += tickAmount;
+            ui.score.textContent = Math.floor(currentScore);
+        }, i * 20);
+    }
+}
+
+function popElement(element, color) {
+    element.classList.add('pop');
+    element.style.color = color;
+    setTimeout(() => {
+        element.classList.remove('pop');
+        element.style.color = '#fff';
+    }, 200);
+}
+
+function updateBurstMeter() {
+    ui.burstFill.style.width = `${burstMeter}%`;
+}
+function shakeScreen(intensity = 5) {
+    const x = (Math.random() - 0.5) * intensity;
+    const y = (Math.random() - 0.5) * intensity;
+    gameContainer.style.transform = `translate(${x}px, ${y}px)`;
+    setTimeout(() => gameContainer.style.transform = '', 100);
+}
+
+function showScreen(screenToShow) {
+    // Hide all modal screens
+    ui.start.classList.remove('active');
+    ui.gameOver.classList.remove('active');
+    
+    // Hide gameplay UI layer
+    if (screenToShow !== ui.gameplay) {
+        ui.gameplay.classList.add('hidden');
+    } else {
+        ui.gameplay.classList.remove('hidden');
+    }
+
+    // Show the requested screen
+    if (screenToShow && screenToShow !== ui.gameplay) {
+        screenToShow.classList.add('active');
+    }
+}
+
+
+// --- EVENT LISTENERS ---
+window.addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'Space' && !gameOver && !ui.start.classList.contains('active')) { e.preventDefault(); switchPlayerColor(); } if ((e.code === 'KeyX') && !gameOver) activateChromaBurst(); });
+window.addEventListener('keyup', (e) => keys[e.code] = false);
+let touchMoveStartX = 0, playerStartPosX = 0;
+gameCanvas.addEventListener('touchstart', (e) => { if(gameOver) return; touchMoveStartX = e.touches[0].clientX; playerStartPosX = player.x; }, { passive: true });
+gameCanvas.addEventListener('touchmove', (e) => { if(gameOver) return; let deltaX = e.touches[0].clientX - touchMoveStartX; player.x = playerStartPosX + deltaX; }, { passive: true });
+gameCanvas.addEventListener('click', (e) => { 
+    if(gameOver) return; 
+    const now = new Date().getTime(); 
+    if (now - lastTap < 300) {
+        activateChromaBurst();
+    } else {
+        switchPlayerColor();
+    }
+    lastTap = now; 
+});
+
+// --- INITIALIZATION ---
+showScreen(ui.start);
+</script>
+</body>
+</html>

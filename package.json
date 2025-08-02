@@ -1,0 +1,28 @@
+{
+  "name": "chroma-core",
+  "version": "1.0.0",
+  "description": "An addictive cyberpunk color-matching survival game",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 8000",
+    "serve": "python -m http.server 8000"
+  },
+  "keywords": [
+    "game",
+    "html5",
+    "javascript",
+    "browser-game",
+    "color-matching",
+    "cyberpunk",
+    "survival"
+  ],
+  "author": "RorriMaesu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RorriMaesu/ChromaCore.git"
+  },
+  "homepage": "https://rorrimaesu.github.io/ChromaCore/",
+  "dependencies": {},
+  "devDependencies": {}
+}

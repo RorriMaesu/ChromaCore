@@ -1,0 +1,23 @@
+title: "Chroma Core - Ultimate Compulsion Protocol"
+description: "An addictive cyberpunk color-matching survival game"
+url: "https://rorrimaesu.github.io"
+baseurl: "/ChromaCore"
+
+# GitHub Pages settings
+theme: minima
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+
+# Custom variables for SEO
+author:
+  name: "RorriMaesu"
+  url: "https://github.com/RorriMaesu"
+
+social:
+  links:
+    - "https://github.com/RorriMaesu"
+    - "https://buymeacoffee.com/rorrimaesu"
+
+# Enable GitHub Pages
+github: [metadata]
